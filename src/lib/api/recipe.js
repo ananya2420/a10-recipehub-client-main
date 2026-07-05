@@ -11,57 +11,77 @@ const getHeaders = (token) => {
 
 
 export const getAllRecips = async (search = "", category = "", queryString = "") => {
-    if (!baseUrl) throw new Error("NEXT_PUBLIC_SERVER_URL is not defined");
+    const buildQuery = (value) => (value.startsWith('?') ? value : `?${value}`);
+    const buildUrl = (value) => {
+        if (value) return buildQuery(value);
+        const params = new URLSearchParams();
+        if (search) params.append('search', search);
+        if (category) params.append('category', category);
+        return params.toString() ? `?${params.toString()}` : '';
+    };
 
-    // If queryString is provided, use it directly
-    if (queryString) {
-        const query = queryString.startsWith('?') ? queryString : `?${queryString}`;
-        const res = await fetch(`${baseUrl}/recips${query}`, { cache: 'no-store' });
-        
-        if (!res.ok) {
-            const errorData = await res.text();
-            throw new Error(`Failed to fetch data: ${res.status} - ${errorData || res.statusText}`);
+    const fetchRecipes = async (url) => {
+        try {
+            const res = await fetch(url, { cache: 'no-store' });
+            if (!res.ok) {
+                const errorData = await res.text();
+                console.warn(`Recipe fetch failed for ${url}: ${res.status} - ${errorData || res.statusText}`);
+                return null;
+            }
+            return await res.json();
+        } catch (error) {
+            console.warn(`Recipe fetch error for ${url}:`, error);
+            return null;
         }
-        return await res.json();
+    };
+
+    const query = buildUrl(queryString);
+    const localUrl = `/api/recips${query}`;
+    const localData = await fetchRecipes(localUrl);
+
+    if (localData) {
+        return Array.isArray(localData) ? localData : [];
     }
 
-    // Default logic: Ensure params include search, category, AND potential pagination
-    const params = new URLSearchParams();
-    if (search) params.append('search', search);
-    if (category) params.append('category', category);
-    
-    // If you need to support pagination here as well, 
-    // you should pass 'page' and 'perPage' as arguments to getAllRecips
-    
-    const url = `${baseUrl}/recips?${params.toString()}`;
-
-    const res = await fetch(url, { cache: 'no-store' });
-    
-    // Improved error reporting to help debug the specific cause
-    if (!res.ok) {
-        const errorData = await res.text();
-        throw new Error(`Failed to fetch data: ${res.status} - ${errorData}`);
+    if (!baseUrl) {
+        return [];
     }
-    
-    return await res.json();
+
+    const fallbackUrl = `${baseUrl}/recips${query}`;
+    const fallbackData = await fetchRecipes(fallbackUrl);
+    return Array.isArray(fallbackData) ? fallbackData : [];
 };
 
 
 // Add the token parameter here
 export const getRecipeById = async (id, token = null) => {
-    if (!baseUrl) throw new Error("NEXT_PUBLIC_SERVER_URL is not defined");
+    const localUrl = `/api/recipe/${id}`;
 
-    const res = await fetch(`${baseUrl}/recipe/${id}`, { 
-        cache: 'no-store',
-        // Add the headers object
-        headers: {
-            'Content-Type': 'application/json',
-         
+    try {
+        const localRes = await fetch(localUrl, { cache: 'no-store' });
+        if (localRes.ok) {
+            return await localRes.json();
         }
-    });
-    
-    if (!res.ok) return null;
-    return await res.json();
+    } catch (error) {
+        console.warn(`Local recipe fetch failed for ${localUrl}:`, error);
+    }
+
+    if (!baseUrl) return null;
+
+    try {
+        const res = await fetch(`${baseUrl}/recipe/${id}`, {
+            cache: 'no-store',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+
+        if (!res.ok) return null;
+        return await res.json();
+    } catch (error) {
+        console.warn(`Fallback recipe fetch failed for ${baseUrl}/recipe/${id}:`, error);
+        return null;
+    }
 };
 
 
